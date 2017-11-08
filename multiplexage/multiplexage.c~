@@ -1,0 +1,99 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <netdb.h>
+
+int main(int argc, char **argv)
+{
+  int i;
+  int maxFD=0; //le plus grand des files descripteur 
+  int tab_socket[5]; //tableau des files descripteur
+  int sock_ouverte=0;
+  char buffer[1024] = {0};
+
+
+   //création du buffer
+  int descbrloc = socket(AF_INET, SOCK_STREAM, 0);
+  if(descbrloc == -1)
+    printf("erreur ^^ \n");
+
+  maxFD=descbrloc;
+
+
+  //création et configuration de la socket
+  struct  sockaddr_in ad;
+  ad.sin_family = AF_INET;
+  ad.sin_addr.s_addr = inet_addr("127.0.01");
+  ad.sin_port = htons((short)31469);
+
+
+  //le bind = liaison entre le buffer et le socket
+  int res = bind(descbrloc,(struct sockaddr*)&ad, sizeof(ad));
+  if(res < 0)
+      perror("erreur du bind \n");
+
+
+  //structure du client
+  struct sockaddr_in client; 
+  socklen_t lgclient = sizeof(client);
+
+
+  fd_set surveiller; //tableau de boolean
+  listen(descbrloc, 5); //file d'attente
+  
+  while(1)
+    {
+      FD_ZERO (&surveiller); //remet le tableau a zero
+      FD_SET (descbrloc, &surveiller); //on rajoute la boite public au tableau
+
+
+      //on rajoute toute les boites aux tableau
+      for(i=0; i<sock_ouverte; i++)
+	FD_SET(tab_socket[i], &surveiller);
+
+      struct timeval timeout;
+      timeout.tv_sec = 3;
+      printf("avant select \n");
+      if(select(maxFD+1, &surveiller, NULL, NULL, &timeout) == -1)
+	{
+	  perror("erreur du select() \n");
+	  close(descbrloc);
+	  return -1;
+	}
+
+
+      //si la boite public a un truc
+      if(FD_ISSET(descbrloc, &surveiller))
+	{
+	  tab_socket[sock_ouverte++]=accept(descbrloc, (struct sockaddr *)&client, &lgclient);
+	  printf("nouvelle socket \n");
+
+	  if(tab_socket[sock_ouverte-1] > maxFD)
+	    maxFD=tab_socket[sock_ouverte-1];
+	}
+
+
+      //check les autre boite
+      for(i=0; i<sock_ouverte; i++)
+	{
+	  if(FD_ISSET(tab_socket[i], &surveiller))
+	    {
+	      printf("serveur : Attente réception d'un message.\n");
+	      if (recv(tab_socket[i], buffer, sizeof(buffer), 0) == -1 )
+		{
+		  perror("recv : error");
+		  close(tab_socket[i]);
+		  return EXIT_FAILURE;
+		}
+	      printf("serveur : Réception du message '%s'.\n", buffer);
+	    }
+	}
+    }
+close(descbrloc);
+return 0;
+}
+
